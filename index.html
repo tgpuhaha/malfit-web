@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>말핏 | AI 자막 자동 생성</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a33; --text:#f2f5ff; --muted:#a9b4d0; --accent:#6ee7ff; }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Apple SD Gothic Neo,Roboto,sans-serif}
+  .wrap{max-width:880px;margin:48px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid #263154;border-radius:18px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 12px;font-size:28px;letter-spacing:.2px}
+  p.sub{margin:0 0 18px;color:var(--muted)}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  input[type=file]{display:none}
+  .btn{display:inline-flex;gap:10px;align-items:center;cursor:pointer;background:#1b2a55;color:#e9f3ff;border:1px solid #2e3a66;border-radius:12px;padding:12px 16px;font-weight:600}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .lang{background:#0f1733;border:1px solid #2b3861;color:#e9f3ff;border-radius:10px;padding:10px}
+  progress{width:100%;height:12px;appearance:none;border:none;border-radius:999px;background:#223058;overflow:hidden}
+  progress::-webkit-progress-bar{background:#223058}
+  progress::-webkit-progress-value{background:linear-gradient(90deg,#6ee7ff,#7aaaff)}
+  .grid{display:grid;gap:10px}
+  .kvs{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center}
+  .muted{color:var(--muted);font-size:14px}
+  a.dl{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;border:1px solid #30407a}
+  .hint{font-size:13px;color:#9fb2ff}
+  .foot{margin-top:18px;color:#7f8ab3;font-size:12px}
+  .hidden{display:none}
+  .ok{color:#78ffcc}
+  .err{color:#ff8e8e}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>말핏 — AI 자막 자동 생성</h1>
+      <p class="sub">MP4 업로드 → Whisper 전사 → (강한) 재작성 SRT → 보이스오버 대본(.txt)</p>
+
+      <div class="grid" style="gap:16px">
+        <div class="kvs">
+          <span class="muted">API</span>
+          <div class="row">
+            <input id="api" value="https://malfit-backend.onrender.com" style="width:100%;background:#0f1733;border:1px solid #2b3861;border-radius:10px;padding:10px;color:#e9f3ff">
+          </div>
+        </div>
+
+        <div class="kvs">
+          <span class="muted">언어</span>
+          <select id="lang" class="lang">
+            <option value="ko" selected>한국어 (ko)</option>
+            <option value="en">영어 (en)</option>
+            <option value="ja">일본어 (ja)</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label class="btn" for="fileInput">🎥 파일 선택(MP4)</label>
+          <input id="fileInput" type="file" accept="video/mp4,video/mov,video/m4v,video/webm" />
+          <button id="uploadBtn" class="btn" disabled>⬆️ 업로드 & 처리 시작</button>
+          <span id="fileInfo" class="muted"></span>
+        </div>
+
+        <div id="sectionProgress" class="hidden">
+          <div class="kvs">
+            <span class="muted">상태</span>
+            <div id="statusText">대기 중…</div>
+          </div>
+          <progress id="bar" max="100" value="0"></progress>
+          <div class="hint">무료 MVP는 <b>200MB</b> 이하 권장. 대용량은 S3/R2 직업로드 버전으로 확장.</div>
+        </div>
+
+        <div id="sectionLinks" class="hidden">
+          <div class="kvs">
+            <span class="muted">결과</span>
+            <div class="grid">
+              <a id="lnkSrt" class="dl" href="#" target="_blank">📄 원본 SRT</a>
+              <a id="lnkRew" class="dl" href="#" target="_blank">🧠 재작성 SRT</a>
+              <a id="lnkVo"  class="dl" href="#" target="_blank">🎙️ 보이스오버 대본(.txt)</a>
+            </div>
+          </div>
+          <div class="foot">Tip: 결과물을 그대로 써도 되고, 에디터에서 추가 편집 후 쓰면 품질이 더 올라가요.</div>
+        </div>
+
+        <div id="sectionMsg" class="muted"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const el = (id)=>document.getElementById(id);
+  const apiInput = el('api');
+  const fileInput = el('fileInput');
+  const uploadBtn = el('uploadBtn');
+  const fileInfo = el('fileInfo');
+  const langSel = el('lang');
+  const sectionProgress = el('sectionProgress');
+  const statusText = el('statusText');
+  const bar = el('bar');
+  const sectionLinks = el('sectionLinks');
+  const lnkSrt = el('lnkSrt');
+  const lnkRew = el('lnkRew');
+  const lnkVo  = el('lnkVo');
+  const msg = el('sectionMsg');
+
+  let file;
+
+  fileInput.addEventListener('change', () => {
+    file = fileInput.files?.[0];
+    sectionLinks.classList.add('hidden');
+    msg.textContent = '';
+    if (!file) { fileInfo.textContent = ''; uploadBtn.disabled = true; return; }
+    fileInfo.textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
+    uploadBtn.disabled = false;
+  });
+
+  uploadBtn.addEventListener('click', async () => {
+    try {
+      uploadBtn.disabled = true;
+      const API_BASE = apiInput.value.replace(/\/+$/,'');
+      if (!file) throw new Error('파일을 선택하세요.');
+      if (!API_BASE) throw new Error('API 주소를 입력하세요.');
+
+      sectionProgress.classList.remove('hidden');
+      statusText.textContent = '업로드 중…';
+      bar.value = 5;
+
+      // 1) 업로드
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('language', langSel.value);
+
+      const up = await fetch(`${API_BASE}/upload`, { method:'POST', body: fd });
+      if (!up.ok) {
+        const t = await up.text();
+        throw new Error(`업로드 실패: ${up.status} ${t}`);
+      }
+      const { jobId } = await up.json();
+      statusText.textContent = `작업 생성됨 (jobId: ${jobId})`;
+      bar.value = 10;
+
+      // 2) 폴링
+      const poll = setInterval(async () => {
+        try {
+          const r = await fetch(`${API_BASE}/jobs/${jobId}`);
+          const d = await r.json();
+          if (d.progress) bar.value = Math.max(bar.value, Number(d.progress)||0);
+          if (d.status) statusText.textContent = statusLabel(d.status);
+          if (d.status === 'done' || d.status === 'error') {
+            clearInterval(poll);
+            if (d.status === 'error') {
+              msg.innerHTML = `<span class="err">오류: ${d.error||'원인 불명'}</span>`;
+              uploadBtn.disabled = false;
+              return;
+            }
+            bar.value = 100;
+            statusText.innerHTML = `<span class="ok">완료!</span>`;
+            // 3) 링크 구성 (문자열 "path|path|path" 또는 JSON 모두 지원)
+            let srtUrl, rewUrl, voUrl;
+            if (typeof d.result === 'string') {
+              const parts = d.result.split('|').map(x=>x.trim());
+              srtUrl = API_BASE + parts[0];
+              rewUrl = API_BASE + parts[1];
+              voUrl  = API_BASE + parts[2];
+            } else if (d.result && typeof d.result === 'object') {
+              // 혹시 JSON으로 오는 경우
+              srtUrl = (d.result.srt?.startsWith('http')? '' : API_BASE) + d.result.srt;
+              rewUrl = (d.result.rewritten?.startsWith('http')? '' : API_BASE) + d.result.rewritten;
+              voUrl  = (d.result.vo?.startsWith('http')? '' : API_BASE) + d.result.vo;
+            }
+            lnkSrt.href = srtUrl; lnkRew.href = rewUrl; lnkVo.href = voUrl;
+            sectionLinks.classList.remove('hidden');
+            uploadBtn.disabled = false;
+          }
+        } catch(e) {
+          clearInterval(poll);
+          msg.innerHTML = `<span class="err">상태 조회 실패: ${e.message}</span>`;
+          uploadBtn.disabled = false;
+        }
+      }, 3000);
+
+    } catch (e) {
+      msg.innerHTML = `<span class="err">${e.message||e}</span>`;
+      uploadBtn.disabled = false;
+    }
+  });
+
+  function statusLabel(s){
+    switch(s){
+      case 'queued': return '대기열…';
+      case 'downloading': return '업로드 수신 중…';
+      case 'audio_extract': return '오디오 추출 중 (ffmpeg)…';
+      case 'whisper': return 'Whisper 전사 중…';
+      case 'rewrite': return 'SRT (강한) 재작성 중…';
+      case 'vo': return '보이스오버 대본 생성 중…';
+      case 'done': return '완료';
+      case 'error': return '오류';
+      default: return s;
+    }
+  }
+})();
+</script>
+</body>
+</html>
