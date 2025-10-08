@@ -35,18 +35,15 @@
   .warn{color:#ffd479}
 </style>
 
-<!-- Supabase UMD (v2) -->
+<!-- Supabase UMD -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-  // 🔑 Supabase 프로젝트 값으로 교체
-  const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";   // 예: https://abcdxyz.supabase.co
-  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";                      // Settings → API → anon public
-  const sb = supabase.createClient(SB_URL, SB_ANON, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-  });
-  // 설정 누락 가드
+  // 🔑 Supabase 프로젝트 값으로 교체/유지
+  const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
+  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
+  const sb = supabase.createClient(SB_URL, SB_ANON, { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
   if (!SB_URL.includes('.supabase.co') || SB_ANON.length < 20) {
-    setTimeout(()=>alert('Supabase 설정(SB_URL, SB_ANON)을 올바르게 입력하세요.\nDashboard → Settings → API에서 복사.'), 0);
+    setTimeout(()=>alert('Supabase 설정(SB_URL, SB_ANON)을 확인하세요.'), 0);
   }
 </script>
 </head>
@@ -68,16 +65,11 @@
   <div id="authModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50">
     <div style="width:420px;max-width:92vw" class="card">
       <h2 id="authTitle" style="margin:0 0 12px">로그인</h2>
-
-      <!-- 전환/힌트 -->
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
         <div id="authHint" class="muted">이메일과 비밀번호를 입력하세요.</div>
         <button id="authSwitch" class="btn alt" style="padding:8px 12px">회원가입으로 전환</button>
       </div>
-
-      <!-- Google OAuth (원하면 숨김 처리 가능) -->
       <button id="btnGoogle" class="btn google">Google로 계속</button>
-
       <div class="grid">
         <input id="authEmail" class="text" placeholder="이메일" autocomplete="email">
         <input id="authPw" class="text" placeholder="비밀번호" autocomplete="current-password" type="password">
@@ -96,9 +88,7 @@
       <div class="grid" style="gap:16px">
         <div class="kvs">
           <span class="muted">API</span>
-          <div class="row" style="flex:1">
-            <input id="api" class="text" value="https://malfit-backend.onrender.com">
-          </div>
+          <div class="row" style="flex:1"><input id="api" class="text" value="https://malfit-backend.onrender.com"></div>
         </div>
 
         <div class="kvs">
@@ -118,10 +108,7 @@
         </div>
 
         <div id="sectionProgress" class="hidden">
-          <div class="kvs">
-            <span class="muted">상태</span>
-            <div id="statusText">대기 중…</div>
-          </div>
+          <div class="kvs"><span class="muted">상태</span><div id="statusText">대기 중…</div></div>
           <progress id="bar" max="100" value="0"></progress>
           <div class="hint">무료 MVP는 <b>200MB</b> 이하 권장. 대용량은 S3/R2 직업로드 버전으로 확장.</div>
         </div>
@@ -161,7 +148,7 @@ const authSwitch = $$('authSwitch');
 const authHint   = $$('authHint');
 const btnGoogle  = $$('btnGoogle');
 
-let authMode = "login"; // "login" | "signup"
+let authMode = "login";
 
 function syncAuthModeUI(){
   if (authMode === "login") {
@@ -177,47 +164,29 @@ function syncAuthModeUI(){
   }
 }
 function openAuth(mode){
-  authMode = mode;
-  authEmail.value = ""; authPw.value = ""; authMsg.textContent = "";
-  syncAuthModeUI();
-  authModal.classList.remove("hidden");
-  setTimeout(()=>authEmail.focus(), 0);
+  authMode = mode; authEmail.value = ""; authPw.value = ""; authMsg.textContent = "";
+  syncAuthModeUI(); authModal.classList.remove("hidden"); setTimeout(()=>authEmail.focus(), 0);
 }
 function closeAuth(){ authModal.classList.add("hidden"); }
 
 btnOpenLogin.onclick  = ()=>openAuth("login");
 btnOpenSignup.onclick = ()=>openAuth("signup");
 authClose.onclick     = closeAuth;
+authSwitch.onclick = ()=>{ authMode = (authMode==="login")?"signup":"login"; syncAuthModeUI(); authMsg.textContent=""; setTimeout(()=>authEmail.focus(),0); };
 
-// 모달 내 전환
-authSwitch.onclick = ()=>{
-  authMode = (authMode === "login") ? "signup" : "login";
-  syncAuthModeUI();
-  authMsg.textContent = "";
-  setTimeout(()=>authEmail.focus(), 0);
-};
-
-// Google OAuth (Supabase → Auth → Providers → Google 활성화 필요)
 btnGoogle.onclick = async ()=>{
   try{
-    const { error } = await sb.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: location.origin }
-    });
+    const { error } = await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin }});
     if (error) throw error;
   }catch(e){ alert(e.message||e); }
 };
 
-// 엔터로 제출
-[authEmail, authPw].forEach(el=>{
-  el.addEventListener('keydown', e=>{ if(e.key === 'Enter') authSubmit.click(); });
-});
+[authEmail, authPw].forEach(el=>el.addEventListener('keydown', e=>{ if(e.key==='Enter') authSubmit.click(); }));
 
 authSubmit.onclick = async () => {
   try{
     authSubmit.disabled = true; authMsg.textContent = "";
-    const email = authEmail.value.trim();
-    const password = authPw.value.trim();
+    const email = authEmail.value.trim(), password = authPw.value.trim();
     if (!email || !password) throw new Error("이메일/비밀번호를 입력하세요.");
 
     if (authMode === "signup") {
@@ -241,37 +210,23 @@ async function renderAuth(){
   const { data: { session } } = await sb.auth.getSession();
   if (session?.user) {
     whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
-    btnOpenLogin.classList.add("hidden");
-    btnOpenSignup.classList.add("hidden");
-    btnLogout.classList.remove("hidden");
+    btnOpenLogin.classList.add("hidden"); btnOpenSignup.classList.add("hidden"); btnLogout.classList.remove("hidden");
     if (window.__selectedFile) document.getElementById('uploadBtn').disabled = false;
   } else {
     whoami.textContent = "로그인 필요";
-    btnOpenLogin.classList.remove("hidden");
-    btnOpenSignup.classList.remove("hidden");
-    btnLogout.classList.add("hidden");
+    btnOpenLogin.classList.remove("hidden"); btnOpenSignup.classList.remove("hidden"); btnLogout.classList.add("hidden");
     document.getElementById('uploadBtn').disabled = true;
   }
 }
-renderAuth();
-sb.auth.onAuthStateChange(()=>renderAuth());
+renderAuth(); sb.auth.onAuthStateChange(()=>renderAuth());
 
 /* ===== 업로드/폴링 ===== */
 (() => {
   const el = (id)=>document.getElementById(id);
-  const apiInput = el('api');
-  const fileInput = el('fileInput');
-  const uploadBtn = el('uploadBtn');
-  const fileInfo = el('fileInfo');
-  const langSel = el('lang');
-  const sectionProgress = el('sectionProgress');
-  const statusText = el('statusText');
-  const bar = el('bar');
-  const sectionLinks = el('sectionLinks');
-  const lnkSrt = el('lnkSrt');
-  const lnkRew = el('lnkRew');
-  const lnkVo  = el('lnkVo');
-  const msg = el('sectionMsg');
+  const apiInput = el('api'), fileInput = el('fileInput'), uploadBtn = el('uploadBtn');
+  const fileInfo = el('fileInfo'), langSel = el('lang'), sectionProgress = el('sectionProgress');
+  const statusText = el('statusText'), bar = el('bar'), sectionLinks = el('sectionLinks');
+  const lnkSrt = el('lnkSrt'), lnkRew = el('lnkRew'), lnkVo = el('lnkVo'), msg = el('sectionMsg');
 
   apiInput.value = localStorage.getItem('malfit_api') || apiInput.value;
   langSel.value  = localStorage.getItem('malfit_lang') || langSel.value;
@@ -281,26 +236,18 @@ sb.auth.onAuthStateChange(()=>renderAuth());
   let file, jobId, working = false;
 
   fileInput.addEventListener('change', async () => {
-    file = fileInput.files?.[0];
-    window.__selectedFile = !!file;
-    sectionLinks.classList.add('hidden');
-    msg.textContent = '';
+    file = fileInput.files?.[0]; window.__selectedFile = !!file;
+    sectionLinks.classList.add('hidden'); msg.textContent = '';
     if (!file) { fileInfo.textContent = ''; uploadBtn.disabled = true; return; }
     fileInfo.textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
-
-    const { data: { session } } = await sb.auth.getSession();
-    uploadBtn.disabled = !session;
+    const { data: { session } } = await sb.auth.getSession(); uploadBtn.disabled = !session;
   });
 
-  window.addEventListener('beforeunload', (e)=>{
-    if (working) { e.preventDefault(); e.returnValue = ''; }
-  });
+  window.addEventListener('beforeunload', (e)=>{ if (working) { e.preventDefault(); e.returnValue=''; } });
 
   async function fetchWithTimeout(url, opt={}, ms=15000){
-    const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), ms);
-    try { return await fetch(url, {...opt, signal: ctrl.signal}); }
-    finally { clearTimeout(t); }
+    const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), ms);
+    try { return await fetch(url, {...opt, signal: ctrl.signal}); } finally { clearTimeout(t); }
   }
 
   uploadBtn.addEventListener('click', async () => {
@@ -311,101 +258,60 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
       uploadBtn.disabled = true;
       const API_BASE = apiInput.value.replace(/\/+$/,'');
-      if (!file) throw new Error('파일을 선택하세요.');
-      if (!API_BASE) throw new Error('API 주소를 입력하세요.');
+      if (!file) throw new Error('파일을 선택하세요.'); if (!API_BASE) throw new Error('API 주소를 입력하세요.');
 
-      sectionProgress.classList.remove('hidden');
-      statusText.textContent = '업로드 중…';
-      bar.value = 5;
-      msg.textContent = '';
-      working = true;
+      sectionProgress.classList.remove('hidden'); statusText.textContent = '업로드 중…'; bar.value = 5; msg.textContent=''; working = true;
 
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('language', langSel.value);
+      const fd = new FormData(); fd.append('file', file); fd.append('language', langSel.value);
 
-      const up = await fetchWithTimeout(`${API_BASE}/upload`, {
-        method:'POST', body: fd,
-        headers: { "Authorization": `Bearer ${accessToken}` }
-      }, 60000);
-
-      if (!up.ok) {
-        const t = await up.text();
-        throw new Error(`업로드 실패: ${up.status} ${t}`);
-      }
-      ({ jobId } = await up.json());
-      statusText.textContent = `작업 생성됨 (jobId: ${jobId})`;
-      bar.value = 12;
+      const up = await fetchWithTimeout(`${API_BASE}/upload`, { method:'POST', body: fd, headers:{ "Authorization": `Bearer ${accessToken}` }}, 60000);
+      if (!up.ok) { const t = await up.text(); throw new Error(`업로드 실패: ${up.status} ${t}`); }
+      ({ jobId } = await up.json()); statusText.textContent = `작업 생성됨 (jobId: ${jobId})`; bar.value = 12;
 
       pollStatus(API_BASE, jobId, accessToken);
 
     } catch (e) {
-      msg.innerHTML = `<span class="err">${e.message||e}</span>`;
-      uploadBtn.disabled = false;
-      working = false;
+      msg.innerHTML = `<span class="err">${e.message||e}</span>`; uploadBtn.disabled = false; working = false;
     }
   });
 
-  let miss = 0;
-  let interval = 2500;
+  let miss = 0, interval = 2500;
 
   async function pollStatus(API_BASE, jobId, accessToken){
     try {
       const r = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}?t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Accept": "application/json", "Authorization": `Bearer ${accessToken}` },
-        keepalive: true
-      }, Math.min(15000, interval + 3000));
+        cache:"no-store", headers:{ "Accept":"application/json", "Authorization":`Bearer ${accessToken}` }, keepalive:true
+      }, Math.min(15000, interval+3000));
 
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const d = await r.json();
-
-      miss = 0; interval = 2500;
+      const d = await r.json(); miss = 0; interval = 2500;
 
       if (d.progress) bar.value = Math.max(bar.value, Number(d.progress)||0);
       if (d.status) statusText.textContent = statusLabel(d.status);
 
       if (d.status === 'done' || d.status === 'error') {
         working = false;
-        if (d.status === 'error') {
-          msg.innerHTML = `<span class="err">오류: ${d.error||'원인 불명'}</span>`;
-          uploadBtn.disabled = false;
-          return;
-        }
-        bar.value = 100;
-        statusText.innerHTML = `<span class="ok">완료!</span>`;
-
+        if (d.status === 'error') { msg.innerHTML = `<span class="err">오류: ${d.error||'원인 불명'}</span>`; uploadBtn.disabled = false; return; }
+        bar.value = 100; statusText.innerHTML = `<span class="ok">완료!</span>`;
         let srtUrl, rewUrl, voUrl;
         if (typeof d.result === 'string') {
-          const parts = d.result.split('|').map(x=>x.trim());
-          srtUrl = API_BASE + parts[0];
-          rewUrl = API_BASE + parts[1];
-          voUrl  = API_BASE + parts[2];
+          const parts = d.result.split('|').map(x=>x.trim()); srtUrl = API_BASE + parts[0]; rewUrl = API_BASE + parts[1]; voUrl = API_BASE + parts[2];
         } else if (d.result && typeof d.result === 'object') {
-          srtUrl = (d.result.srt?.startsWith('http')? '' : API_BASE) + d.result.srt;
-          rewUrl = (d.result.rewritten?.startsWith('http')? '' : API_BASE) + d.result.rewritten;
-          voUrl  = (d.result.vo?.startsWith('http')? '' : API_BASE) + d.result.vo;
+          srtUrl = (d.result.srt?.startsWith('http')?'':API_BASE) + d.result.srt;
+          rewUrl = (d.result.rewritten?.startsWith('http')?'':API_BASE) + d.result.rewritten;
+          voUrl  = (d.result.vo?.startsWith('http')?'':API_BASE) + d.result.vo;
         }
         lnkSrt.href = srtUrl; lnkRew.href = rewUrl; lnkVo.href = voUrl;
-        sectionLinks.classList.remove('hidden');
-        uploadBtn.disabled = false;
-        return;
+        sectionLinks.classList.remove('hidden'); uploadBtn.disabled = false; return;
       }
 
     } catch (e) {
-      miss += 1;
-      msg.innerHTML = `<span class="warn">상태 조회 실패(${miss}): ${e.message}</span>`;
-      if (miss > 10) {
-        working = false;
-        msg.innerHTML = `<span class="err">상태 조회를 여러 번 실패했습니다. 잠시 후 다시 시도해주세요.</span>`;
-        uploadBtn.disabled = false;
-        return;
-      }
+      miss += 1; msg.innerHTML = `<span class="warn">상태 조회 실패(${miss}): ${e.message}</span>`;
+      if (miss > 10) { working = false; msg.innerHTML = `<span class="err">상태 조회를 여러 번 실패했습니다. 잠시 후 다시 시도해주세요.</span>`; uploadBtn.disabled = false; return; }
       interval = Math.min(interval * 1.6, 10000);
     }
     setTimeout(async ()=>{
-      const { data: { session } } = await sb.auth.getSession();
-      const token = session?.access_token || "";
+      const { data: { session } } = await sb.auth.getSession(); const token = session?.access_token || "";
       pollStatus(apiInput.value.replace(/\/+$/,''), jobId, token);
     }, interval);
   }
