@@ -39,8 +39,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
   // 🔑 Supabase 프로젝트 값으로 교체
-  const SB_URL  = "https://YOUR-PROJECT.supabase.co";   // 예: https://abcdxyz.supabase.co
-  const SB_ANON = "YOUR-ANON-KEY";                      // Settings → API → anon public
+  const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";   // 예: https://abcdxyz.supabase.co
+  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";                      // Settings → API → anon public
   const sb = supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
