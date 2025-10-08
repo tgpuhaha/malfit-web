@@ -33,7 +33,7 @@
   .ok{color:#78ffcc}
   .err{color:#ff8e8e}
   .warn{color:#ffd479}
-  .spin{width:16px;height:16px;border:2px solid #9fb2ff;border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite}
+  .spin{width:16px;height:16px;border:2px solid #9fb2ff;border-top-color:transparent;border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
 </style>
 
@@ -42,9 +42,7 @@
 <script>
   const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
   const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
-  const sb = supabase.createClient(SB_URL, SB_ANON, {
-    auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
-  });
+  const sb = supabase.createClient(SB_URL, SB_ANON, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }});
 </script>
 </head>
 <body>
@@ -211,13 +209,10 @@ btnMagic.onclick = async ()=>{
 // 엔터 키
 [authEmail, authPw].forEach(el=>el.addEventListener('keydown', e=>{ if(e.key==='Enter') authSubmit.click(); }));
 
-// ==== 로그인/가입 처리 (지연/차단 폴백 포함) ====
+// ==== 로그인/가입 처리 (지연/차단 폴백 + 서버 우회 폴백) ====
 authSubmit.onclick = async () => {
   const email = authEmail.value.trim(), password = authPw.value.trim();
-  if (!email || !password) {
-    authMsg.innerHTML = `<span class="err">이메일/비밀번호를 입력하세요.</span>`;
-    return;
-  }
+  if (!email || !password) { authMsg.innerHTML = `<span class="err">이메일/비밀번호를 입력하세요.</span>`; return; }
 
   authSubmit.disabled = true;
   const orig = authSubmit.textContent;
@@ -234,44 +229,41 @@ authSubmit.onclick = async () => {
       return;
     }
 
-    // 1) 정상 경로 (헤더 apikey) — 10초 타임아웃
-    let signResult;
+    // 1) 정상 경로(헤더 apikey) — 10초 타임아웃
+    let ok = false;
     try {
-      signResult = await Promise.race([
+      const res1 = await Promise.race([
         sb.auth.signInWithPassword({ email, password }),
         timeout(10000, "로그인 요청이 지연됩니다. 네트워크/차단(확장프로그램, 프록시)을 확인하세요.")
       ]);
-    } catch (e) {
-      signResult = { data: null, error: e };
+      if (!res1?.error) ok = true;
+    } catch (_) {}
+
+    // 2) 지연/차단 시: 쿼리스트링 apikey 폴백(+setSession)
+    if (!ok) {
+      try {
+        const url = `${SB_URL}/auth/v1/token?grant_type=password&apikey=${encodeURIComponent(SB_ANON)}`;
+        const r = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ email, password }) });
+        if (!r.ok) throw new Error(await r.text());
+        const j = await r.json();
+        const s = await sb.auth.setSession({ access_token: j.access_token, refresh_token: j.refresh_token });
+        if (!s?.data?.session && s?.error) throw s.error;
+        ok = true;
+      } catch (_) {}
     }
 
-    // 2) 실패/지연 시 폴백: 쿼리스트링 apikey + setSession
-    if (signResult?.error || !signResult?.data) {
-      const url = `${SB_URL}/auth/v1/token?grant_type=password&apikey=${encodeURIComponent(SB_ANON)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type":"application/json" }, // apikey 헤더 사용 안 함
-        body: JSON.stringify({ email, password }),
-        mode: "cors",
-        credentials: "omit"
-      });
-      if (!res.ok) {
-        const txt = await res.text().catch(()=> "");
-        throw new Error(`로그인 실패: ${res.status} ${res.statusText}${txt?` - ${txt.slice(0,200)}`:""}`);
-      }
-      const j = await res.json(); // { access_token, refresh_token, ... }
-      if (!j.access_token || !j.refresh_token) throw new Error("로그인 응답 형식이 올바르지 않습니다.");
-
-      const { error: setErr } = await sb.auth.setSession({
-        access_token: j.access_token,
-        refresh_token: j.refresh_token
-      });
-      if (setErr) throw setErr;
+    // 3) 그래도 안 되면: 서버 우회 폴백(/api/supabase-login)
+    if (!ok) {
+      const r2 = await fetch("/api/supabase-login", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ email, password }) });
+      if (!r2.ok) throw new Error(`서버 중계 로그인 실패: ${r2.status} ${await r2.text()}`);
+      const j2 = await r2.json();
+      const s2 = await sb.auth.setSession({ access_token: j2.access_token, refresh_token: j2.refresh_token });
+      if (!s2?.data?.session && s2?.error) throw s2.error;
+      ok = true;
     }
 
-    // 3) 세션 확보(최대 10초)
-    let session = null;
-    const deadline = Date.now() + 10000;
+    // 4) 세션 확인(최대 10초)
+    let session = null, deadline = Date.now() + 10000;
     while (!session && Date.now() < deadline) {
       const g = await sb.auth.getSession();
       session = g?.data?.session || null;
@@ -279,7 +271,6 @@ authSubmit.onclick = async () => {
     }
     if (!session) throw new Error("로그인은 성공했지만 브라우저가 세션을 저장하지 못했습니다. 시크릿 모드/쿠키 차단을 확인하세요.");
 
-    // 4) 성공 UI
     authMsg.innerHTML = `<span class="ok">로그인 성공!</span>`;
     await renderAuth(session);
     closeAuth();
@@ -365,8 +356,7 @@ sb.auth.onAuthStateChange(()=>renderAuth());
       const fd = new FormData(); fd.append('file', file); fd.append('language', langSel.value);
 
       const up = await fetchWithTimeout(`${API_BASE}/upload`, {
-        method:'POST', body: fd,
-        headers:{ "Authorization": `Bearer ${accessToken}` }
+        method:'POST', body: fd, headers:{ "Authorization": `Bearer ${accessToken}` }
       }, 60000);
 
       if (!up.ok) { const t = await up.text(); throw new Error(`업로드 실패: ${up.status} ${t}`); }
@@ -385,9 +375,7 @@ sb.auth.onAuthStateChange(()=>renderAuth());
   async function pollStatus(API_BASE, jobId, accessToken){
     try {
       const r = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}?t=${Date.now()}`, {
-        cache:"no-store",
-        headers:{ "Accept":"application/json", "Authorization":`Bearer ${accessToken}` },
-        keepalive:true
+        cache:"no-store", headers:{ "Accept":"application/json", "Authorization":`Bearer ${accessToken}` }, keepalive:true
       }, Math.min(15000, interval+3000));
 
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
