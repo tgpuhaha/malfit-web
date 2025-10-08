@@ -33,15 +33,19 @@
   .ok{color:#78ffcc}
   .err{color:#ff8e8e}
   .warn{color:#ffd479}
+  .spin{width:16px;height:16px;border:2px solid #9fb2ff;border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
 </style>
 
 <!-- Supabase UMD -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-  // 🔑 네 프로젝트 값 (이미 올바르게 입력됨)
+  // 🔑 이미 넣어둔 값 사용
   const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
   const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
-  const sb = supabase.createClient(SB_URL, SB_ANON, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }});
+  const sb = supabase.createClient(SB_URL, SB_ANON, {
+    auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+  });
 </script>
 </head>
 <body>
@@ -58,7 +62,7 @@
     </div>
   </div>
 
-  <!-- 로그인/가입 모달 (배경 클릭/ESC 닫힘) -->
+  <!-- 로그인/가입 모달 -->
   <div id="authModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999">
     <div id="authCard" style="width:420px;max-width:92vw" class="card">
       <h2 id="authTitle" style="margin:0 0 12px">로그인</h2>
@@ -75,7 +79,10 @@
         <input id="authPw" class="text" placeholder="비밀번호" autocomplete="current-password" type="password">
         <button type="button" id="authSubmit" class="btn solid">로그인</button>
         <div id="authMsg" class="muted"></div>
-        <button type="button" id="authClose" class="btn" style="background:#2a375f">닫기</button>
+        <div class="row" style="justify-content:space-between">
+          <button type="button" id="btnMagic" class="btn alt">이메일 로그인 링크 받기</button>
+          <button type="button" id="authClose" class="btn" style="background:#2a375f">닫기</button>
+        </div>
       </div>
     </div>
   </div>
@@ -148,8 +155,10 @@ const authClose  = $$('authClose');
 const authSwitch = $$('authSwitch');
 const authHint   = $$('authHint');
 const btnGoogle  = $$('btnGoogle');
+const btnMagic   = $$('btnMagic');
 
 let authMode = "login";
+
 function syncAuthModeUI(){
   if (authMode === "login") {
     authTitle.textContent = "로그인";
@@ -174,12 +183,12 @@ function closeAuth(){ authModal.classList.add("hidden"); }
 btnOpenLogin.onclick  = ()=>openAuth("login");
 btnOpenSignup.onclick = ()=>openAuth("signup");
 
-// 닫기 버튼/배경/ESC
+// 닫기/배경/ESC
 authClose.onclick = closeAuth;
 authModal.addEventListener('click', (e)=>{ if (e.target === authModal) closeAuth(); });
 window.addEventListener('keydown', (e)=>{ if (!authModal.classList.contains('hidden') && e.key === 'Escape') closeAuth(); });
 
-// 모드 전환
+// 전환
 authSwitch.onclick = ()=>{ authMode = (authMode === "login") ? "signup" : "login"; syncAuthModeUI(); authMsg.textContent=""; setTimeout(()=>authEmail.focus(),0); };
 
 // Google OAuth
@@ -190,32 +199,67 @@ btnGoogle.onclick = async ()=>{
   }catch(e){ alert(e.message||e); }
 };
 
-// 엔터로 제출
+// 매직링크(비번 없이 로그인 테스트)
+btnMagic.onclick = async ()=>{
+  try{
+    const email = authEmail.value.trim();
+    if(!email) return alert("이메일을 먼저 입력하세요.");
+    const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.origin }});
+    if (error) throw error;
+    authMsg.innerHTML = `<span class="ok">로그인 링크를 메일로 보냈어요.</span>`;
+  }catch(e){ authMsg.innerHTML = `<span class="err">${e.message||e}</span>`; }
+};
+
+// 엔터 키
 [authEmail, authPw].forEach(el=>el.addEventListener('keydown', e=>{ if(e.key==='Enter') authSubmit.click(); }));
 
+// 로그인/가입 처리 (세션 보장 루프 포함)
 authSubmit.onclick = async () => {
   try{
-    authSubmit.disabled = true; authMsg.textContent = "";
     const email = authEmail.value.trim(), password = authPw.value.trim();
-    if (!email || !password) throw new Error("이메일/비밀번호를 입력하세요.");
+    if (!email || !password) return authMsg.innerHTML = `<span class="err">이메일/비밀번호를 입력하세요.</span>`;
+
+    authSubmit.disabled = true;
+    authSubmit.innerHTML = `<span class="spin"></span>`;
 
     if (authMode === "signup") {
       const { error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
-      authMsg.innerHTML = `<span class="ok">가입 완료! 이메일 확인 메일이 발송되었습니다.</span>`;
-    } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-
-      // 세션이 갱신될 시간을 약간 주고 UI 갱신 후 닫기
-      await new Promise(r=>setTimeout(r, 200));
-      await renderAuth();
-      closeAuth();
+      authMsg.innerHTML = `<span class="ok">가입 완료! 이메일 확인 후 로그인하세요.</span>`;
+      authSubmit.innerHTML = "가입하기";
+      authSubmit.disabled = false;
+      return;
     }
+
+    // 로그인
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+
+    // 세션이 실제로 저장될 때까지 최대 3초 대기(폴백)
+    let session = null;
+    for (let i=0;i<15;i++){
+      const g = await sb.auth.getSession();
+      session = g?.data?.session || null;
+      if (session) break;
+      await new Promise(r=>setTimeout(r, 200));
+    }
+    if (!session) {
+      throw new Error("로그인은 성공했지만 브라우저가 세션을 저장하지 못했습니다. 시크릿 모드/쿠키 차단을 확인해주세요.");
+    }
+
+    // 성공 UI
+    authMsg.innerHTML = `<span class="ok">로그인 성공!</span>`;
+    await renderAuth();
+    closeAuth();
+
   } catch(e){
     console.error('[auth error]', e);
-    authMsg.innerHTML = `<span class="err">${e.message||e}</span>`;
-  } finally { authSubmit.disabled = false; }
+    const msg = e?.message || String(e);
+    authMsg.innerHTML = `<span class="err">${msg}</span>`;
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.innerHTML = (authMode === "login") ? "로그인" : "가입하기";
+  }
 };
 
 btnLogout.onclick = async ()=>{ await sb.auth.signOut(); await renderAuth(); };
@@ -234,7 +278,7 @@ async function renderAuth(){
     btnOpenLogin.classList.remove("hidden");
     btnOpenSignup.classList.remove("hidden");
     btnLogout.classList.add("hidden");
-    document.getElementById('uploadBtn').disabled = true;
+    const up = document.getElementById('uploadBtn'); if (up) up.disabled = true;
   }
 }
 renderAuth();
