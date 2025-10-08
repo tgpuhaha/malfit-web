@@ -40,7 +40,7 @@
 <!-- Supabase UMD -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-  // 🔑 이미 넣어둔 값 사용
+  // 🔑 Supabase 프로젝트 값
   const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
   const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
   const sb = supabase.createClient(SB_URL, SB_ANON, {
@@ -145,7 +145,6 @@ const btnOpenLogin  = $$('btnOpenLogin');
 const btnOpenSignup = $$('btnOpenSignup');
 const btnLogout     = $$('btnLogout');
 const authModal  = $$('authModal');
-const authCard   = $$('authCard');
 const authTitle  = $$('authTitle');
 const authEmail  = $$('authEmail');
 const authPw     = $$('authPw');
@@ -213,72 +212,83 @@ btnMagic.onclick = async ()=>{
 // 엔터 키
 [authEmail, authPw].forEach(el=>el.addEventListener('keydown', e=>{ if(e.key==='Enter') authSubmit.click(); }));
 
-// 로그인/가입 처리 (세션 보장 루프 포함)
+// ==== 로그인/가입 처리 (세션 즉시/지연 모두 커버, 10초 타임아웃) ====
 authSubmit.onclick = async () => {
-  try{
-    const email = authEmail.value.trim(), password = authPw.value.trim();
-    if (!email || !password) return authMsg.innerHTML = `<span class="err">이메일/비밀번호를 입력하세요.</span>`;
+  const email = authEmail.value.trim(), password = authPw.value.trim();
+  if (!email || !password) {
+    authMsg.innerHTML = `<span class="err">이메일/비밀번호를 입력하세요.</span>`;
+    return;
+  }
 
-    authSubmit.disabled = true;
-    authSubmit.innerHTML = `<span class="spin"></span>`;
+  authSubmit.disabled = true;
+  const orig = authSubmit.textContent;
+  authSubmit.innerHTML = `<span class="spin"></span>`;
 
+  const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+  const timeout = (ms,msg)=>new Promise((_,rej)=>setTimeout(()=>rej(new Error(msg)),ms));
+
+  try {
     if (authMode === "signup") {
       const { error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
       authMsg.innerHTML = `<span class="ok">가입 완료! 이메일 확인 후 로그인하세요.</span>`;
-      authSubmit.innerHTML = "가입하기";
-      authSubmit.disabled = false;
       return;
     }
 
-    // 로그인
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    // 1) 로그인 요청 (10초 타임아웃 레이스)
+    const { data, error } = await Promise.race([
+      sb.auth.signInWithPassword({ email, password }),
+      timeout(10000, "로그인 요청이 지연됩니다. 네트워크/차단(확장프로그램, 프록시)을 확인하세요.")
+    ]);
     if (error) throw error;
 
-    // 세션이 실제로 저장될 때까지 최대 3초 대기(폴백)
-    let session = null;
-    for (let i=0;i<15;i++){
-      const g = await sb.auth.getSession();
-      session = g?.data?.session || null;
-      if (session) break;
-      await new Promise(r=>setTimeout(r, 200));
-    }
-    if (!session) {
-      throw new Error("로그인은 성공했지만 브라우저가 세션을 저장하지 못했습니다. 시크릿 모드/쿠키 차단을 확인해주세요.");
-    }
+    // 2) 응답에 세션이 있으면 즉시 성공 처리
+    let session = data?.session || null;
 
-    // 성공 UI
+    // 3) 없으면 최대 10초 동안 세션 폴링
+    if (!session) {
+      const deadline = Date.now() + 10000;
+      while (!session && Date.now() < deadline) {
+        const g = await sb.auth.getSession();
+        session = g?.data?.session || null;
+        if (!session) await sleep(300);
+      }
+    }
+    if (!session) throw new Error("로그인은 성공했지만 브라우저가 세션을 저장하지 못했습니다. 시크릿 모드/쿠키 차단을 확인하세요.");
+
+    // 4) 성공 UI
     authMsg.innerHTML = `<span class="ok">로그인 성공!</span>`;
-    await renderAuth();
+    await renderAuth(session);
     closeAuth();
 
-  } catch(e){
-    console.error('[auth error]', e);
-    const msg = e?.message || String(e);
-    authMsg.innerHTML = `<span class="err">${msg}</span>`;
+  } catch (e) {
+    console.error("[auth error]", e);
+    authMsg.innerHTML = `<span class="err">${e?.message || e}</span>`;
   } finally {
     authSubmit.disabled = false;
-    authSubmit.innerHTML = (authMode === "login") ? "로그인" : "가입하기";
+    authSubmit.textContent = orig;
   }
 };
 
 btnLogout.onclick = async ()=>{ await sb.auth.signOut(); await renderAuth(); };
 
-// 상태 반영
-async function renderAuth(){
-  const { data: { session } } = await sb.auth.getSession();
+// 상태 반영 (세션 인자 받으면 즉시 반영)
+async function renderAuth(sessionOpt){
+  let session = sessionOpt || (await sb.auth.getSession()).data.session;
+  const uploadBtn = document.getElementById('uploadBtn');
+
   if (session?.user) {
     whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
     btnOpenLogin.classList.add("hidden");
     btnOpenSignup.classList.add("hidden");
     btnLogout.classList.remove("hidden");
-    if (window.__selectedFile) document.getElementById('uploadBtn').disabled = false;
+    if (window.__selectedFile && uploadBtn) uploadBtn.disabled = false;
   } else {
     whoami.textContent = "로그인 필요";
     btnOpenLogin.classList.remove("hidden");
     btnOpenSignup.classList.remove("hidden");
     btnLogout.classList.add("hidden");
-    const up = document.getElementById('uploadBtn'); if (up) up.disabled = true;
+    if (uploadBtn) uploadBtn.disabled = true;
   }
 }
 renderAuth();
