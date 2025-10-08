@@ -35,7 +35,7 @@
 <!-- Supabase UMD (v2) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-  // 🔑 여기에 네 프로젝트 값 입력
+  // 🔑 Supabase 프로젝트 값으로 교체
   const SB_URL  = "https://YOUR-PROJECT.supabase.co";
   const SB_ANON = "YOUR-ANON-KEY";
   const sb = supabase.createClient(SB_URL, SB_ANON, {
@@ -61,10 +61,17 @@
   <div id="authModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50">
     <div style="width:420px;max-width:92vw" class="card">
       <h2 id="authTitle" style="margin:0 0 12px">로그인</h2>
+
+      <!-- 전환/힌트 -->
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <div id="authHint" class="muted">이메일과 비밀번호를 입력하세요.</div>
+        <button id="authSwitch" class="btn" style="background:#263154;padding:8px 12px">회원가입으로 전환</button>
+      </div>
+
       <div class="grid">
         <input id="authEmail" class="text" placeholder="이메일" autocomplete="email">
         <input id="authPw" class="text" placeholder="비밀번호" autocomplete="current-password" type="password">
-        <button id="authSubmit" class="btn">확인</button>
+        <button id="authSubmit" class="btn">로그인</button>
         <div id="authMsg" class="muted"></div>
         <button id="authClose" class="btn" style="background:#2a375f">닫기</button>
       </div>
@@ -140,13 +147,29 @@ const authPw     = $$('authPw');
 const authSubmit = $$('authSubmit');
 const authMsg    = $$('authMsg');
 const authClose  = $$('authClose');
+const authSwitch = $$('authSwitch');
+const authHint   = $$('authHint');
 
-let authMode = "login";
+let authMode = "login"; // "login" | "signup"
+
+function syncAuthModeUI(){
+  if (authMode === "login") {
+    authTitle.textContent = "로그인";
+    authSwitch.textContent = "회원가입으로 전환";
+    authSubmit.textContent = "로그인";
+    authHint.textContent = "이메일과 비밀번호를 입력하세요.";
+  } else {
+    authTitle.textContent = "회원가입";
+    authSwitch.textContent = "로그인으로 전환";
+    authSubmit.textContent = "가입하기";
+    authHint.textContent = "가입에 사용할 이메일과 비밀번호를 설정하세요.";
+  }
+}
 
 function openAuth(mode){
   authMode = mode;
-  authTitle.textContent = mode === "login" ? "로그인" : "회원가입";
   authEmail.value = ""; authPw.value = ""; authMsg.textContent = "";
+  syncAuthModeUI();
   authModal.classList.remove("hidden");
   setTimeout(()=>authEmail.focus(), 0);
 }
@@ -155,6 +178,19 @@ function closeAuth(){ authModal.classList.add("hidden"); }
 btnOpenLogin.onclick  = ()=>openAuth("login");
 btnOpenSignup.onclick = ()=>openAuth("signup");
 authClose.onclick     = closeAuth;
+
+// 모달 내 전환 버튼
+authSwitch.onclick = ()=>{
+  authMode = (authMode === "login") ? "signup" : "login";
+  syncAuthModeUI();
+  authMsg.textContent = "";
+  setTimeout(()=>authEmail.focus(), 0);
+};
+
+// 엔터로 제출
+[authEmail, authPw].forEach(el=>{
+  el.addEventListener('keydown', e=>{ if(e.key === 'Enter') authSubmit.click(); });
+});
 
 authSubmit.onclick = async () => {
   try{
@@ -186,7 +222,6 @@ async function renderAuth(){
     btnOpenLogin.classList.add("hidden");
     btnOpenSignup.classList.add("hidden");
     btnLogout.classList.remove("hidden");
-    // 로그인되면 파일이 선택되어 있을 때만 업로드 버튼 활성화
     if (window.__selectedFile) document.getElementById('uploadBtn').disabled = false;
   } else {
     whoami.textContent = "로그인 필요";
@@ -199,7 +234,7 @@ async function renderAuth(){
 renderAuth();
 sb.auth.onAuthStateChange(()=>renderAuth());
 
-/* ===== 기존 업로드/폴링 로직 ===== */
+/* ===== 업로드/폴링 ===== */
 (() => {
   const el = (id)=>document.getElementById(id);
   const apiInput = el('api');
@@ -225,13 +260,12 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
   fileInput.addEventListener('change', async () => {
     file = fileInput.files?.[0];
-    window.__selectedFile = !!file; // ✅ 인증 UI와 연동
+    window.__selectedFile = !!file;
     sectionLinks.classList.add('hidden');
     msg.textContent = '';
     if (!file) { fileInfo.textContent = ''; uploadBtn.disabled = true; return; }
     fileInfo.textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
 
-    // 로그인 상태에서만 활성화
     const { data: { session } } = await sb.auth.getSession();
     uploadBtn.disabled = !session;
   });
@@ -249,7 +283,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
   uploadBtn.addEventListener('click', async () => {
     try {
-      // ✅ 로그인 강제
       const { data: { session } } = await sb.auth.getSession();
       if (!session) { alert('로그인 후 이용하세요.'); return; }
       const accessToken = session.access_token;
@@ -265,14 +298,13 @@ sb.auth.onAuthStateChange(()=>renderAuth());
       msg.textContent = '';
       working = true;
 
-      // 1) 업로드
       const fd = new FormData();
       fd.append('file', file);
       fd.append('language', langSel.value);
 
       const up = await fetchWithTimeout(`${API_BASE}/upload`, {
         method:'POST', body: fd,
-        headers: { "Authorization": `Bearer ${accessToken}` } // ✅ 토큰 전달
+        headers: { "Authorization": `Bearer ${accessToken}` }
       }, 60000);
 
       if (!up.ok) {
@@ -283,7 +315,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
       statusText.textContent = `작업 생성됨 (jobId: ${jobId})`;
       bar.value = 12;
 
-      // 2) 폴링 시작
       pollStatus(API_BASE, jobId, accessToken);
 
     } catch (e) {
@@ -333,7 +364,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
           rewUrl = (d.result.rewritten?.startsWith('http')? '' : API_BASE) + d.result.rewritten;
           voUrl  = (d.result.vo?.startsWith('http')? '' : API_BASE) + d.result.vo;
         }
-        // 다운로드에 인증이 필요한 라우트라면 ?token= 추가도 고려
         lnkSrt.href = srtUrl; lnkRew.href = rewUrl; lnkVo.href = voUrl;
         sectionLinks.classList.remove('hidden');
         uploadBtn.disabled = false;
