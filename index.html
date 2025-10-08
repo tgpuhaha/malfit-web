@@ -31,8 +31,46 @@
   .err{color:#ff8e8e}
   .warn{color:#ffd479}
 </style>
+
+<!-- Supabase UMD (v2) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+  // 🔑 여기에 네 프로젝트 값 입력
+  const SB_URL  = "https://YOUR-PROJECT.supabase.co";
+  const SB_ANON = "YOUR-ANON-KEY";
+  const sb = supabase.createClient(SB_URL, SB_ANON, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+</script>
 </head>
 <body>
+
+  <!-- 상단 인증 바 -->
+  <div id="authbar" style="background:#0f1733;border-bottom:1px solid #28335a">
+    <div style="max-width:880px;margin:0 auto;padding:10px 16px;display:flex;gap:8px;align-items:center;justify-content:space-between">
+      <div id="whoami" class="muted">로그인 필요</div>
+      <div class="row">
+        <button class="btn" id="btnOpenLogin">로그인</button>
+        <button class="btn" id="btnOpenSignup">회원가입</button>
+        <button class="btn hidden" id="btnLogout">로그아웃</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로그인/가입 모달 -->
+  <div id="authModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50">
+    <div style="width:420px;max-width:92vw" class="card">
+      <h2 id="authTitle" style="margin:0 0 12px">로그인</h2>
+      <div class="grid">
+        <input id="authEmail" class="text" placeholder="이메일" autocomplete="email">
+        <input id="authPw" class="text" placeholder="비밀번호" autocomplete="current-password" type="password">
+        <button id="authSubmit" class="btn">확인</button>
+        <div id="authMsg" class="muted"></div>
+        <button id="authClose" class="btn" style="background:#2a375f">닫기</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap">
     <div class="card">
       <h1>말핏 — AI 자막 자동 생성</h1>
@@ -89,6 +127,79 @@
   </div>
 
 <script>
+/* ===== 인증 UI ===== */
+const $$ = (id)=>document.getElementById(id);
+const whoami = $$('whoami');
+const btnOpenLogin  = $$('btnOpenLogin');
+const btnOpenSignup = $$('btnOpenSignup');
+const btnLogout     = $$('btnLogout');
+const authModal  = $$('authModal');
+const authTitle  = $$('authTitle');
+const authEmail  = $$('authEmail');
+const authPw     = $$('authPw');
+const authSubmit = $$('authSubmit');
+const authMsg    = $$('authMsg');
+const authClose  = $$('authClose');
+
+let authMode = "login";
+
+function openAuth(mode){
+  authMode = mode;
+  authTitle.textContent = mode === "login" ? "로그인" : "회원가입";
+  authEmail.value = ""; authPw.value = ""; authMsg.textContent = "";
+  authModal.classList.remove("hidden");
+  setTimeout(()=>authEmail.focus(), 0);
+}
+function closeAuth(){ authModal.classList.add("hidden"); }
+
+btnOpenLogin.onclick  = ()=>openAuth("login");
+btnOpenSignup.onclick = ()=>openAuth("signup");
+authClose.onclick     = closeAuth;
+
+authSubmit.onclick = async () => {
+  try{
+    authSubmit.disabled = true; authMsg.textContent = "";
+    const email = authEmail.value.trim();
+    const password = authPw.value.trim();
+    if (!email || !password) throw new Error("이메일/비밀번호를 입력하세요.");
+
+    if (authMode === "signup") {
+      const { error } = await sb.auth.signUp({ email, password });
+      if (error) throw error;
+      authMsg.innerHTML = `<span class="ok">가입 완료! 이메일 확인 메일이 발송되었습니다.</span>`;
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      closeAuth();
+    }
+  } catch(e){
+    authMsg.innerHTML = `<span class="err">${e.message||e}</span>`;
+  } finally { authSubmit.disabled = false; }
+};
+
+btnLogout.onclick = async ()=>{ await sb.auth.signOut(); };
+
+async function renderAuth(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (session?.user) {
+    whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
+    btnOpenLogin.classList.add("hidden");
+    btnOpenSignup.classList.add("hidden");
+    btnLogout.classList.remove("hidden");
+    // 로그인되면 파일이 선택되어 있을 때만 업로드 버튼 활성화
+    if (window.__selectedFile) document.getElementById('uploadBtn').disabled = false;
+  } else {
+    whoami.textContent = "로그인 필요";
+    btnOpenLogin.classList.remove("hidden");
+    btnOpenSignup.classList.remove("hidden");
+    btnLogout.classList.add("hidden");
+    document.getElementById('uploadBtn').disabled = true;
+  }
+}
+renderAuth();
+sb.auth.onAuthStateChange(()=>renderAuth());
+
+/* ===== 기존 업로드/폴링 로직 ===== */
 (() => {
   const el = (id)=>document.getElementById(id);
   const apiInput = el('api');
@@ -105,7 +216,6 @@
   const lnkVo  = el('lnkVo');
   const msg = el('sectionMsg');
 
-  // 저장/복원 (API, 언어)
   apiInput.value = localStorage.getItem('malfit_api') || apiInput.value;
   langSel.value  = localStorage.getItem('malfit_lang') || langSel.value;
   apiInput.addEventListener('change', ()=> localStorage.setItem('malfit_api', apiInput.value));
@@ -113,21 +223,23 @@
 
   let file, jobId, working = false;
 
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
     file = fileInput.files?.[0];
+    window.__selectedFile = !!file; // ✅ 인증 UI와 연동
     sectionLinks.classList.add('hidden');
     msg.textContent = '';
     if (!file) { fileInfo.textContent = ''; uploadBtn.disabled = true; return; }
     fileInfo.textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
-    uploadBtn.disabled = false;
+
+    // 로그인 상태에서만 활성화
+    const { data: { session } } = await sb.auth.getSession();
+    uploadBtn.disabled = !session;
   });
 
-  // 창 이탈 방지
   window.addEventListener('beforeunload', (e)=>{
     if (working) { e.preventDefault(); e.returnValue = ''; }
   });
 
-  // fetch 타임아웃 헬퍼
   async function fetchWithTimeout(url, opt={}, ms=15000){
     const ctrl = new AbortController();
     const t = setTimeout(()=>ctrl.abort(), ms);
@@ -137,6 +249,11 @@
 
   uploadBtn.addEventListener('click', async () => {
     try {
+      // ✅ 로그인 강제
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { alert('로그인 후 이용하세요.'); return; }
+      const accessToken = session.access_token;
+
       uploadBtn.disabled = true;
       const API_BASE = apiInput.value.replace(/\/+$/,'');
       if (!file) throw new Error('파일을 선택하세요.');
@@ -153,7 +270,11 @@
       fd.append('file', file);
       fd.append('language', langSel.value);
 
-      const up = await fetchWithTimeout(`${API_BASE}/upload`, { method:'POST', body: fd }, 60000);
+      const up = await fetchWithTimeout(`${API_BASE}/upload`, {
+        method:'POST', body: fd,
+        headers: { "Authorization": `Bearer ${accessToken}` } // ✅ 토큰 전달
+      }, 60000);
+
       if (!up.ok) {
         const t = await up.text();
         throw new Error(`업로드 실패: ${up.status} ${t}`);
@@ -162,8 +283,8 @@
       statusText.textContent = `작업 생성됨 (jobId: ${jobId})`;
       bar.value = 12;
 
-      // 2) 탄력 폴링 시작
-      pollStatus(API_BASE, jobId);
+      // 2) 폴링 시작
+      pollStatus(API_BASE, jobId, accessToken);
 
     } catch (e) {
       msg.innerHTML = `<span class="err">${e.message||e}</span>`;
@@ -172,23 +293,21 @@
     }
   });
 
-  // ====== 탄력 폴링(백오프, 최대 10회 연속 실패 허용) ======
   let miss = 0;
   let interval = 2500;
 
-  async function pollStatus(API_BASE, jobId){
+  async function pollStatus(API_BASE, jobId, accessToken){
     try {
       const r = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}?t=${Date.now()}`, {
         cache: "no-store",
-        headers: { "Accept": "application/json" },
+        headers: { "Accept": "application/json", "Authorization": `Bearer ${accessToken}` },
         keepalive: true
       }, Math.min(15000, interval + 3000));
 
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const d = await r.json();
 
-      miss = 0; // 정상 응답 → 실패 카운터 리셋
-      interval = 2500;
+      miss = 0; interval = 2500;
 
       if (d.progress) bar.value = Math.max(bar.value, Number(d.progress)||0);
       if (d.status) statusText.textContent = statusLabel(d.status);
@@ -203,7 +322,6 @@
         bar.value = 100;
         statusText.innerHTML = `<span class="ok">완료!</span>`;
 
-        // 링크 구성 (문자열 또는 JSON)
         let srtUrl, rewUrl, voUrl;
         if (typeof d.result === 'string') {
           const parts = d.result.split('|').map(x=>x.trim());
@@ -215,6 +333,7 @@
           rewUrl = (d.result.rewritten?.startsWith('http')? '' : API_BASE) + d.result.rewritten;
           voUrl  = (d.result.vo?.startsWith('http')? '' : API_BASE) + d.result.vo;
         }
+        // 다운로드에 인증이 필요한 라우트라면 ?token= 추가도 고려
         lnkSrt.href = srtUrl; lnkRew.href = rewUrl; lnkVo.href = voUrl;
         sectionLinks.classList.remove('hidden');
         uploadBtn.disabled = false;
@@ -230,10 +349,13 @@
         uploadBtn.disabled = false;
         return;
       }
-      // 점진적 백오프(최대 10초)
       interval = Math.min(interval * 1.6, 10000);
     }
-    setTimeout(()=>pollStatus(apiInput.value.replace(/\/+$/,''), jobId), interval);
+    setTimeout(async ()=>{
+      const { data: { session } } = await sb.auth.getSession();
+      const token = session?.access_token || "";
+      pollStatus(apiInput.value.replace(/\/+$/,''), jobId, token);
+    }, interval);
   }
 
   function statusLabel(s){
