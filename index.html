@@ -8,6 +8,7 @@
   :root { --bg:#0b1020; --card:#121a33; --text:#f2f5ff; --muted:#a9b4d0; --accent:#6ee7ff; }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Apple SD Gothic Neo,Roboto,sans-serif}
+  body.gate-locked{ overflow:hidden; }
   .wrap{max-width:880px;margin:48px auto;padding:0 16px}
   .card{background:var(--card);border:1px solid #263154;border-radius:18px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
   h1{margin:0 0 12px;font-size:28px;letter-spacing:.2px}
@@ -35,7 +36,7 @@
 <script>
   // 🔑 Supabase 프로젝트 값
   const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
-  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
+  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9zZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
   const sb = supabase.createClient(SB_URL, SB_ANON, {
     auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
   });
@@ -63,7 +64,8 @@
         <div class="kvs">
           <span class="muted">API</span>
           <div class="row" style="flex:1">
-            <input id="api" class="text" value="https://malfit-backend.onrender.com">
+            <!-- 프로덕션에선 readonly로 잠금 -->
+            <input id="api" class="text" value="https://malfit-backend.onrender.com" readonly>
           </div>
         </div>
 
@@ -77,7 +79,7 @@
         </div>
 
         <div class="row">
-          <label class="btn" for="fileInput">🎥 파일 선택(MP4)</label>
+          <label class="btn" for="fileInput" id="fileLabel">🎥 파일 선택(MP4)</label>
           <input id="fileInput" type="file" accept="video/mp4,video/mov,video/m4v,video/webm" style="display:none" />
           <button type="button" id="uploadBtn" class="btn" disabled>⬆️ 업로드 & 처리 시작</button>
           <span id="fileInfo" class="muted"></span>
@@ -106,19 +108,50 @@
     </div>
   </div>
 
+  <!-- ===== 로그인 게이트(전체 오버레이) ===== -->
+  <div id="authGate" style="
+    position:fixed; inset:0; backdrop-filter: blur(4px);
+    background: rgba(5,10,25,.75); display:flex; align-items:center; justify-content:center; z-index:9999;">
+    <div style="width:min(560px,94vw)" class="card">
+      <h2 style="margin:0 0 10px">로그인이 필요합니다</h2>
+      <p class="muted" style="margin:0 0 16px">Google 계정으로 로그인 후 서비스를 이용하세요.</p>
+      <div class="row">
+        <button type="button" id="gateGoogleBtn" class="btn google">Google로 계속</button>
+      </div>
+      <p class="muted" id="gateMsg" style="margin-top:12px"></p>
+    </div>
+  </div>
+
 <script>
-/* ===== 인증: Google만 (로그아웃 하드리셋 포함) ===== */
+/* ===== 인증: Google만 (게이트 + 하드 로그아웃) ===== */
 const whoami = document.getElementById('whoami');
 const btnGoogle = document.getElementById('btnGoogle');
 const btnLogout = document.getElementById('btnLogout');
 
-btnGoogle.onclick = async ()=>{
+const authGate = document.getElementById('authGate');
+const gateGoogleBtn = document.getElementById('gateGoogleBtn');
+const gateMsg = document.getElementById('gateMsg');
+
+function showGate(){
+  authGate.style.display = 'flex';
+  document.body.classList.add('gate-locked');
+}
+function hideGate(){
+  authGate.style.display = 'none';
+  document.body.classList.remove('gate-locked');
+}
+
+async function googleSignIn(){
+  gateMsg.textContent = '';
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: location.origin }
   });
-  if (error) alert(error.message);
-};
+  if (error) gateMsg.textContent = error.message;
+}
+
+btnGoogle.onclick = googleSignIn;
+gateGoogleBtn.onclick = googleSignIn;
 
 // 하드 로그아웃: 서버 토큰 폐기 + 로컬 토큰 삭제 + 새로고침
 btnLogout.onclick = async ()=>{
@@ -129,6 +162,7 @@ btnLogout.onclick = async ()=>{
     });
     sessionStorage.clear();
   } catch(e){}
+  showGate();
   location.replace(location.origin);
 };
 
@@ -139,12 +173,14 @@ async function renderAuth(){
     whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
     btnGoogle.classList.add('hidden');
     btnLogout.classList.remove('hidden');
+    hideGate();
     if (window.__selectedFile && uploadBtn) uploadBtn.disabled = false;
   } else {
     whoami.textContent = "로그인 필요";
     btnGoogle.classList.remove('hidden');
     btnLogout.classList.add('hidden');
-    if (uploadBtn) uploadBtn.disabled = true;
+    showGate();                               // ✅ 로그인 전엔 항상 게이트 ON
+    if (uploadBtn) uploadBtn.disabled = true; // 1차 게이트
   }
 }
 renderAuth();
@@ -156,10 +192,12 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 (() => {
   const el = (id)=>document.getElementById(id);
   const apiInput = el('api'), fileInput = el('fileInput'), uploadBtn = el('uploadBtn');
+  const fileLabel = el('fileLabel');
   const fileInfo = el('fileInfo'), langSel = el('lang'), sectionProgress = el('sectionProgress');
   const statusText = el('statusText'), bar = el('bar'), sectionLinks = el('sectionLinks');
   const lnkSrt = el('lnkSrt'), lnkRew = el('lnkRew'), lnkVo = el('lnkVo'), msg = el('sectionMsg');
 
+  // 저장/복원
   apiInput.value = localStorage.getItem('malfit_api') || apiInput.value;
   langSel.value  = localStorage.getItem('malfit_lang') || langSel.value;
   apiInput.addEventListener('change', ()=> localStorage.setItem('malfit_api', apiInput.value));
@@ -167,9 +205,10 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
   let file, jobId, working = false;
 
-  // 레이블 클릭 → input
-  document.querySelector('label[for="fileInput"]').addEventListener('click', ()=>{
-    document.getElementById('fileInput').click();
+  // 게이트 #0: 파일 라벨 클릭 자체를 로그인 전엔 막기
+  fileLabel.addEventListener('click', async (e)=>{
+    const { data:{ session } } = await sb.auth.getSession();
+    if (!session) { e.preventDefault(); alert('Google 로그인 후 이용하세요.'); }
   });
 
   // 파일 선택 시: 로그인 상태 아닐 땐 항상 비활성화 (게이트 #1)
