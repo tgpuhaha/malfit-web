@@ -7,7 +7,7 @@
 <style>
   :root { --bg:#0b1020; --card:#121a33; --text:#f2f5ff; --muted:#a9b4d0; --accent:#6ee7ff; }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Apple SD Gothic Neo,Roboto,sans-serif}
+  body{margin:0;background:#0b1020;color:var(--text);font-family:Inter,system-ui,Segoe UI,Apple SD Gothic Neo,Roboto,sans-serif}
   body.gate-locked{ overflow:hidden; }
   .wrap{max-width:880px;margin:48px auto;padding:0 16px}
   .card{background:var(--card);border:1px solid #263154;border-radius:18px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
@@ -20,7 +20,7 @@
   .text, .lang{background:#0f1733;border:1px solid #2b3861;color:#e9f3ff;border-radius:10px;padding:10px;width:100%}
   progress{width:100%;height:12px;appearance:none;border:none;border-radius:999px;background:#223058}
   progress::-webkit-progress-value{background:linear-gradient(90deg,#6ee7ff,#7aaaff)}
-  .grid{display:grid;gap:10px}
+  .grid{display:grid;gap:16px}
   .kvs{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center}
   .muted{color:var(--muted);font-size:14px}
   a.dl{display:inline-flex;gap:8px;padding:10px 12px;border-radius:10px;border:1px solid #30407a}
@@ -60,11 +60,10 @@
       <h1>말핏 — AI 자막 자동 생성</h1>
       <p class="sub">MP4 업로드 → Whisper 전사 → (강한) 재작성 SRT → 보이스오버 대본(.txt)</p>
 
-      <div class="grid" style="gap:16px">
+      <div class="grid">
         <div class="kvs">
           <span class="muted">API</span>
           <div class="row" style="flex:1">
-            <!-- 프로덕션에선 readonly로 잠금 -->
             <input id="api" class="text" value="https://malfit-backend.onrender.com" readonly>
           </div>
         </div>
@@ -108,10 +107,8 @@
     </div>
   </div>
 
-  <!-- ===== 로그인 게이트(전체 오버레이) ===== -->
-  <div id="authGate" style="
-    position:fixed; inset:0; backdrop-filter: blur(4px);
-    background: rgba(5,10,25,.75); display:flex; align-items:center; justify-content:center; z-index:9999;">
+  <!-- 로그인 게이트 -->
+  <div id="authGate" style="position:fixed; inset:0; backdrop-filter: blur(4px); background: rgba(5,10,25,.75); display:flex; align-items:center; justify-content:center; z-index:9999;">
     <div style="width:min(560px,94vw)" class="card">
       <h2 style="margin:0 0 10px">로그인이 필요합니다</h2>
       <p class="muted" style="margin:0 0 16px">Google 계정으로 로그인 후 서비스를 이용하세요.</p>
@@ -123,7 +120,7 @@
   </div>
 
 <script>
-/* ===== 인증: Google만 (게이트 + 하드 로그아웃) ===== */
+/* ===== 인증: Google만 (게이트 + 하드 로그아웃 + 해시토큰 흡수) ===== */
 const whoami = document.getElementById('whoami');
 const btnGoogle = document.getElementById('btnGoogle');
 const btnLogout = document.getElementById('btnLogout');
@@ -132,26 +129,37 @@ const authGate = document.getElementById('authGate');
 const gateGoogleBtn = document.getElementById('gateGoogleBtn');
 const gateMsg = document.getElementById('gateMsg');
 
-function showGate(){
-  authGate.style.display = 'flex';
-  document.body.classList.add('gate-locked');
-}
-function hideGate(){
-  authGate.style.display = 'none';
-  document.body.classList.remove('gate-locked');
-}
+function showGate(){ authGate.style.display='flex'; document.body.classList.add('gate-locked'); }
+function hideGate(){ authGate.style.display='none'; document.body.classList.remove('gate-locked'); }
 
 async function googleSignIn(){
   gateMsg.textContent = '';
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: location.origin }
+    options: { redirectTo: location.origin } // 돌아올 주소
   });
   if (error) gateMsg.textContent = error.message;
 }
-
 btnGoogle.onclick = googleSignIn;
 gateGoogleBtn.onclick = googleSignIn;
+
+// 🔧 핵심: 해시(#)에 담겨 온 토큰을 세션으로 주입
+async function handleOAuthHash(){
+  const hash = location.hash || "";
+  if (!hash.includes("access_token")) return;
+  const p = new URLSearchParams(hash.substring(1));
+  const access_token  = p.get("access_token");
+  const refresh_token = p.get("refresh_token");
+  if (access_token && refresh_token) {
+    try {
+      await sb.auth.setSession({ access_token, refresh_token });
+    } catch (e) {
+      console.warn("setSession from hash failed:", e);
+    } finally {
+      history.replaceState(null, "", location.origin + location.pathname); // 주소창에서 토큰 제거
+    }
+  }
+}
 
 // 하드 로그아웃: 서버 토큰 폐기 + 로컬 토큰 삭제 + 새로고침
 btnLogout.onclick = async ()=>{
@@ -183,7 +191,9 @@ async function renderAuth(){
     if (uploadBtn) uploadBtn.disabled = true; // 1차 게이트
   }
 }
-renderAuth();
+
+// ✅ 초기: 해시 토큰 흡수 → UI 렌더
+handleOAuthHash().then(()=>renderAuth());
 sb.auth.onAuthStateChange(()=>renderAuth());
 </script>
 
@@ -197,7 +207,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
   const statusText = el('statusText'), bar = el('bar'), sectionLinks = el('sectionLinks');
   const lnkSrt = el('lnkSrt'), lnkRew = el('lnkRew'), lnkVo = el('lnkVo'), msg = el('sectionMsg');
 
-  // 저장/복원
   apiInput.value = localStorage.getItem('malfit_api') || apiInput.value;
   langSel.value  = localStorage.getItem('malfit_lang') || langSel.value;
   apiInput.addEventListener('change', ()=> localStorage.setItem('malfit_api', apiInput.value));
@@ -206,7 +215,7 @@ sb.auth.onAuthStateChange(()=>renderAuth());
   let file, jobId, working = false;
 
   // 게이트 #0: 파일 라벨 클릭 자체를 로그인 전엔 막기
-  fileLabel.addEventListener('click', async (e)=>{
+  document.getElementById('fileLabel').addEventListener('click', async (e)=>{
     const { data:{ session } } = await sb.auth.getSession();
     if (!session) { e.preventDefault(); alert('Google 로그인 후 이용하세요.'); }
   });
