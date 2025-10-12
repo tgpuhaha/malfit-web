@@ -33,7 +33,7 @@
 <!-- Supabase UMD -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-  // 🔑 너의 프로젝트 값
+  // 🔑 프로젝트 설정
   const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
   const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
   const sb = supabase.createClient(SB_URL, SB_ANON, {
@@ -112,7 +112,7 @@ const whoami = document.getElementById('whoami');
 const btnGoogle = document.getElementById('btnGoogle');
 const btnLogout = document.getElementById('btnLogout');
 
-// 전역 선택 상태
+// 전역: 파일 선택 여부
 window.__selectedFile = false;
 
 btnGoogle.onclick = async ()=>{
@@ -123,10 +123,21 @@ btnGoogle.onclick = async ()=>{
   if (error) alert(error.message);
 };
 
+// ⚡ 강제 로그아웃(세션/토큰/UI 완전 초기화)
 btnLogout.onclick = async ()=>{
-  await sb.auth.signOut();
+  try { btnLogout.disabled = true; } catch(e){}
+  try { await sb.auth.signOut({ scope:'local' }); } catch(e){ console.warn(e); }
 
-  // ✅ 화면을 로그인 전 상태로 완전 초기화
+  // sb-* 로컬 토큰류 방어적으로 삭제
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('sb-')) { localStorage.removeItem(k); i--; }
+    }
+  } catch(e){}
+  try { sessionStorage.clear(); } catch(e){}
+
+  // 화면 리셋
   window.__selectedFile = false;
   const uploadBtn = document.getElementById('uploadBtn');
   const fileInput  = document.getElementById('fileInput');
@@ -147,6 +158,9 @@ btnLogout.onclick = async ()=>{
   if (statusText) statusText.textContent = "대기 중…";
 
   await renderAuth();
+
+  // 최종 보장: 하드 리프레시(뒤에 쿼리 제거)
+  location.replace(location.origin + location.pathname);
 };
 
 async function renderAuth(){
@@ -156,7 +170,6 @@ async function renderAuth(){
     whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
     btnGoogle.classList.add('hidden');
     btnLogout.classList.remove('hidden');
-    // ✅ 로그인되었고 파일이 선택되어 있으면 업로드 가능
     if (uploadBtn) uploadBtn.disabled = !(window.__selectedFile);
   } else {
     whoami.textContent = "로그인 필요";
@@ -185,13 +198,13 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
   let file, jobId, working = false;
 
-  // ❌ (중복 클릭 유발) label → input 강제 click 리스너 제거
+  // (중복 클릭 유발 리스너 제거됨)
 
   fileInput.addEventListener('change', async () => {
     file = fileInput.files?.[0];
     window.__selectedFile = !!file;
 
-    sectionLinks.classList.add('hidden'); 
+    sectionLinks.classList.add('hidden');
     msg.textContent = '';
 
     if (!file) {
@@ -202,7 +215,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
     fileInfo.textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
     const { data:{ session } } = await sb.auth.getSession();
-    // ✅ 로그인 상태 + 파일 선택 → 업로드 가능
     uploadBtn.disabled = !(session && file);
   });
 
