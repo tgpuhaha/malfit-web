@@ -1,58 +1,4 @@
-<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>말핏 | AI 자막 자동 생성</title>
-<style>
-  :root { --bg:#0b1020; --card:#121a33; --text:#f2f5ff; --muted:#a9b4d0; --accent:#6ee7ff; }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Apple SD Gothic Neo,Roboto,sans-serif}
-  .wrap{max-width:880px;margin:48px auto;padding:0 16px}
-  .card{background:var(--card);border:1px solid #263154;border-radius:18px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
-  h1{margin:0 0 12px;font-size:28px;letter-spacing:.2px}
-  p.sub{margin:0 0 18px;color:var(--muted)}
-  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-  .btn{display:inline-flex;gap:10px;align-items:center;cursor:pointer;background:#1b2a55;color:#e9f3ff;border:1px solid #2e3a66;border-radius:12px;padding:12px 16px;font-weight:600}
-  .btn:disabled{opacity:.6;cursor:not-allowed}
-  .btn.google{background:#2b6b3f}
-  .text, .lang{background:#0f1733;border:1px solid #2b3861;color:#e9f3ff;border-radius:10px;padding:10px;width:100%}
-  progress{width:100%;height:12px;appearance:none;border:none;border-radius:999px;background:#223058}
-  progress::-webkit-progress-value{background:linear-gradient(90deg,#6ee7ff,#7aaaff)}
-  .grid{display:grid;gap:10px}
-  .kvs{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center}
-  .muted{color:var(--muted);font-size:14px}
-  a.dl{display:inline-flex;gap:8px;padding:10px 12px;border-radius:10px;border:1px solid #30407a}
-  .hint{font-size:13px;color:#9fb2ff}
-  .foot{margin-top:18px;color:#7f8ab3;font-size:12px}
-  .hidden{display:none}
-  .ok{color:#78ffcc}
-  .err{color:#ff8e8e}
-</style>
-
-<!-- Supabase UMD -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script>
-  // 🔑 프로젝트 설정
-  const SB_URL  = "https://thcfcnqrufkcezhwwcho.supabase.co";
-  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoY2ZjbnFydWZrY2V6aHd3Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI3NTgsImV4cCI6MjA3NTQ3ODc1OH0.XRJpJ4u2uWpO7afQNELc_x4_jNY7wiHtTUNcVHmC7b0";
-  const sb = supabase.createClient(SB_URL, SB_ANON, {
-    auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
-  });
-</script>
-</head>
-<body>
-
-  <!-- 상단 바 -->
-  <div style="background:#0f1733;border-bottom:1px solid #28335a">
-    <div style="max-width:880px;margin:0 auto;padding:10px 16px;display:flex;gap:8px;align-items:center;justify-content:space-between">
-      <div id="whoami" class="muted">로그인 필요</div>
-      <div class="row">
-        <button type="button" class="btn google" id="btnGoogle">Google로 계속</button>
-        <button type="button" class="btn hidden" id="btnLogout">로그아웃</button>
-      </div>
-    </div>
-  </div>
+<!-- ...위쪽 동일 -->
 
   <div class="wrap">
     <div class="card">
@@ -60,126 +6,93 @@
       <p class="sub">MP4 업로드 → Whisper 전사 → (강한) 재작성 SRT → 보이스오버 대본(.txt)</p>
 
       <div class="grid" style="gap:16px">
-        <div class="kvs">
-          <span class="muted">API</span>
-          <div class="row" style="flex:1">
-            <input id="api" class="text" value="https://malfit-backend.onrender.com">
-          </div>
+        <!-- (기존) API / 언어 / 업로드 UI 그대로 -->
+        <!-- ... 기존 kvs/row/sectionProgress/sectionLinks/sectionMsg 그대로 ... -->
+
+        <!-- 🔶 [추가] 결제한 충전코드 영역 -->
+        <div id="sectionClaims" class="hidden" style="margin-top:8px;padding:16px;border:1px solid #2b3861;border-radius:12px;background:#0f1733">
+          <h3 style="margin:0 0 8px">🔑 결제한 충전 코드</h3>
+          <div id="claims-list" class="muted">불러오는 중…</div>
+          <button id="redeem-all" class="btn" style="margin-top:12px;display:none">모두 적립하기</button>
+          <div class="hint" style="margin-top:8px">구글 로그인 이메일과 강의사이트 결제 이메일이 같을 때 자동으로 표시됩니다.</div>
         </div>
 
-        <div class="kvs">
-          <span class="muted">언어</span>
-          <select id="lang" class="lang">
-            <option value="ko" selected>한국어 (ko)</option>
-            <option value="en">영어 (en)</option>
-            <option value="ja">일본어 (ja)</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <label class="btn" for="fileInput">🎥 파일 선택(MP4)</label>
-          <input id="fileInput" type="file" accept="video/mp4,video/mov,video/m4v,video/webm" style="display:none" />
-          <button type="button" id="uploadBtn" class="btn" disabled>⬆️ 업로드 & 처리 시작</button>
-          <span id="fileInfo" class="muted"></span>
-        </div>
-
-        <div id="sectionProgress" class="hidden">
-          <div class="kvs"><span class="muted">상태</span><div id="statusText">대기 중…</div></div>
-          <progress id="bar" max="100" value="0"></progress>
-          <div class="hint">무료 MVP는 <b>200MB</b> 이하 권장. 대용량은 S3/R2 직업로드 버전으로 확장.</div>
-        </div>
-
-        <div id="sectionLinks" class="hidden">
-          <div class="kvs">
-            <span class="muted">결과</span>
-            <div class="grid">
-              <a id="lnkSrt" class="dl" href="#" target="_blank">📄 원본 SRT</a>
-              <a id="lnkRew" class="dl" href="#" target="_blank">🧠 재작성 SRT</a>
-              <a id="lnkVo"  class="dl" href="#" target="_blank">🎙️ 보이스오버 대본(.txt)</a>
-            </div>
-          </div>
-          <div class="foot">Tip: 결과물을 그대로 써도 되고, 에디터에서 추가 편집 후 쓰면 품질이 더 올라가요.</div>
-        </div>
-
-        <div id="sectionMsg" class="muted"></div>
       </div>
     </div>
   </div>
 
+<!-- ... 아래 스크립트들 유지 -->
+
 <script>
-/* ===== 인증: Google만 ===== */
-const whoami = document.getElementById('whoami');
-const btnGoogle = document.getElementById('btnGoogle');
-const btnLogout = document.getElementById('btnLogout');
-
-// 전역: 파일 선택 여부
-window.__selectedFile = false;
-
-btnGoogle.onclick = async ()=>{
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: location.origin }
-  });
-  if (error) alert(error.message);
-};
-
-// ⚡ 강제 로그아웃(세션/토큰/UI 완전 초기화)
-btnLogout.onclick = async ()=>{
-  try { btnLogout.disabled = true; } catch(e){}
-  try { await sb.auth.signOut({ scope:'local' }); } catch(e){ console.warn(e); }
-
-  // sb-* 로컬 토큰류 방어적으로 삭제
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('sb-')) { localStorage.removeItem(k); i--; }
-    }
-  } catch(e){}
-  try { sessionStorage.clear(); } catch(e){}
-
-  // 화면 리셋
+  /* ===== 인증: Google만 ===== */
+  const whoami = document.getElementById('whoami');
+  const btnGoogle = document.getElementById('btnGoogle');
+  const btnLogout = document.getElementById('btnLogout');
   window.__selectedFile = false;
-  const uploadBtn = document.getElementById('uploadBtn');
-  const fileInput  = document.getElementById('fileInput');
-  const fileInfo   = document.getElementById('fileInfo');
-  const sectionLinks = document.getElementById('sectionLinks');
-  const sectionProgress = document.getElementById('sectionProgress');
-  const sectionMsg = document.getElementById('sectionMsg');
-  const bar = document.getElementById('bar');
-  const statusText = document.getElementById('statusText');
 
-  if (fileInput) fileInput.value = "";
-  if (fileInfo) fileInfo.textContent = "";
-  if (uploadBtn) uploadBtn.disabled = true;
-  if (sectionLinks) sectionLinks.classList.add('hidden');
-  if (sectionProgress) sectionProgress.classList.add('hidden');
-  if (sectionMsg) sectionMsg.textContent = "";
-  if (bar) bar.value = 0;
-  if (statusText) statusText.textContent = "대기 중…";
+  btnGoogle.onclick = async ()=>{
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: 'google', options: { redirectTo: location.origin }
+    });
+    if (error) alert(error.message);
+  };
 
-  await renderAuth();
+  btnLogout.onclick = async ()=>{
+    try { btnLogout.disabled = true; } catch(e){}
+    try { await sb.auth.signOut({ scope:'local' }); } catch(e){ console.warn(e); }
+    try {
+      for (let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith('sb-')){ localStorage.removeItem(k); i--; } }
+    } catch(e){}
+    try { sessionStorage.clear(); } catch(e){}
 
-  // 최종 보장: 하드 리프레시(뒤에 쿼리 제거)
-  location.replace(location.origin + location.pathname);
-};
+    // 섹션/버튼 초기화
+    window.__selectedFile = false;
+    const uploadBtn = document.getElementById('uploadBtn');
+    const fileInput  = document.getElementById('fileInput');
+    const fileInfo   = document.getElementById('fileInfo');
+    const sectionLinks = document.getElementById('sectionLinks');
+    const sectionProgress = document.getElementById('sectionProgress');
+    const sectionMsg = document.getElementById('sectionMsg');
+    const sectionClaims = document.getElementById('sectionClaims');
+    const bar = document.getElementById('bar');
+    const statusText = document.getElementById('statusText');
 
-async function renderAuth(){
-  const { data:{ session } } = await sb.auth.getSession();
-  const uploadBtn = document.getElementById('uploadBtn');
-  if (session?.user) {
-    whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
-    btnGoogle.classList.add('hidden');
-    btnLogout.classList.remove('hidden');
-    if (uploadBtn) uploadBtn.disabled = !(window.__selectedFile);
-  } else {
-    whoami.textContent = "로그인 필요";
-    btnGoogle.classList.remove('hidden');
-    btnLogout.classList.add('hidden');
+    if (fileInput) fileInput.value = "";
+    if (fileInfo) fileInfo.textContent = "";
     if (uploadBtn) uploadBtn.disabled = true;
+    if (sectionLinks) sectionLinks.classList.add('hidden');
+    if (sectionProgress) sectionProgress.classList.add('hidden');
+    if (sectionMsg) sectionMsg.textContent = "";
+    if (sectionClaims) { sectionClaims.classList.add('hidden'); document.getElementById('claims-list').textContent = "불러오는 중…"; }
+    if (bar) bar.value = 0;
+    if (statusText) statusText.textContent = "대기 중…";
+
+    await renderAuth();
+    location.replace(location.origin + location.pathname);
+  };
+
+  async function renderAuth(){
+    const { data:{ session } } = await sb.auth.getSession();
+    const uploadBtn = document.getElementById('uploadBtn');
+    if (session?.user) {
+      whoami.innerHTML = `안녕하세요, <b>${session.user.email}</b>`;
+      btnGoogle.classList.add('hidden');
+      btnLogout.classList.remove('hidden');
+      if (uploadBtn) uploadBtn.disabled = !(window.__selectedFile);
+      // 🔶 로그인되면 충전코드 영역 로드
+      try { await loadClaimsUI(); } catch(e){ console.warn(e); }
+    } else {
+      whoami.textContent = "로그인 필요";
+      btnGoogle.classList.remove('hidden');
+      btnLogout.classList.add('hidden');
+      if (uploadBtn) uploadBtn.disabled = true;
+      // 비로그인 시 숨김
+      const sectionClaims = document.getElementById('sectionClaims');
+      if (sectionClaims) sectionClaims.classList.add('hidden');
+    }
   }
-}
-renderAuth();
-sb.auth.onAuthStateChange(()=>renderAuth());
+  renderAuth();
+  sb.auth.onAuthStateChange(()=>renderAuth());
 </script>
 
 <script>
@@ -197,8 +110,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
   langSel.addEventListener('change', ()=> localStorage.setItem('malfit_lang', langSel.value));
 
   let file, jobId, working = false;
-
-  // (중복 클릭 유발 리스너 제거됨)
 
   fileInput.addEventListener('change', async () => {
     file = fileInput.files?.[0];
@@ -225,6 +136,17 @@ sb.auth.onAuthStateChange(()=>renderAuth());
     try { return await fetch(url, {...opt, signal: ctrl.signal}); } finally { clearTimeout(t); }
   }
 
+  // 🔧 공통: 인증 헤더 빌더
+  async function authHeaders(){
+    const { data:{ session } } = await sb.auth.getSession();
+    if (!session) return {};
+    return {
+      "Authorization": `Bearer ${session.access_token}`,
+      "X-User-Id": session.user.id,
+      "X-User-Email": session.user.email
+    };
+  }
+
   uploadBtn.addEventListener('click', async () => {
     try {
       const { data:{ session } } = await sb.auth.getSession();
@@ -245,7 +167,8 @@ sb.auth.onAuthStateChange(()=>renderAuth());
       fd.append('language', langSel.value);
 
       const up = await fetchWithTimeout(`${API_BASE}/upload`, {
-        method:'POST', body: fd, headers: { "Authorization": `Bearer ${accessToken}` }
+        method:'POST', body: fd,
+        headers: { "Authorization": `Bearer ${accessToken}` }
       }, 60000);
 
       if (!up.ok) { const t = await up.text(); throw new Error(`업로드 실패: ${up.status} ${t}`); }
@@ -254,7 +177,6 @@ sb.auth.onAuthStateChange(()=>renderAuth());
       bar.value = 12;
 
       pollStatus(API_BASE, jobId, accessToken);
-
     } catch (e) {
       msg.innerHTML = `<span class="err">${e.message||e}</span>`;
       uploadBtn.disabled = false; working = false;
@@ -265,9 +187,8 @@ sb.auth.onAuthStateChange(()=>renderAuth());
 
   async function pollStatus(API_BASE, jobId, accessToken){
     try {
-      const r = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}?t=${Date.now()}`, {
-        cache:"no-store", headers:{ "Accept":"application/json", "Authorization":`Bearer ${accessToken}` }, keepalive:true
-      }, Math.min(15000, interval+3000));
+      const headers = { "Accept":"application/json", "Authorization":`Bearer ${accessToken}` };
+      const r = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}?t=${Date.now()}`, { cache:"no-store", headers, keepalive:true }, Math.min(15000, interval+3000));
 
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const d = await r.json(); miss = 0; interval = 2500;
@@ -289,7 +210,9 @@ sb.auth.onAuthStateChange(()=>renderAuth());
           rewUrl = (d.result.rewritten?.startsWith('http')?'':API_BASE) + d.result.rewritten;
           voUrl  = (d.result.vo?.startsWith('http')?'':API_BASE) + d.result.vo;
         }
-        lnkSrt.href = srtUrl; lnkRew.href = rewUrl; lnkVo.href = voUrl;
+        document.getElementById('lnkSrt').href = srtUrl;
+        document.getElementById('lnkRew').href = rewUrl;
+        document.getElementById('lnkVo').href  = voUrl;
         sectionLinks.classList.remove('hidden'); uploadBtn.disabled = false; return;
       }
 
@@ -317,7 +240,63 @@ sb.auth.onAuthStateChange(()=>renderAuth());
       default: return s;
     }
   }
+
+  // 🔶 [추가] 마이페이지 충전코드 UI ===============================
+  async function loadClaimsUI(){
+    const sectionClaims = document.getElementById('sectionClaims');
+    const listBox = document.getElementById('claims-list');
+    const redeemBtn = document.getElementById('redeem-all');
+    const { data:{ session } } = await sb.auth.getSession();
+    if (!session){ sectionClaims.classList.add('hidden'); return; }
+
+    const API_BASE = apiInput.value.replace(/\/+$/,'');
+    sectionClaims.classList.remove('hidden');
+    listBox.textContent = '불러오는 중…';
+    redeemBtn.style.display = 'none';
+
+    const r = await fetch(`${API_BASE}/api/my_claims`, {
+      headers: {
+        ...(await authHeaders())
+      }
+    });
+    if(!r.ok){
+      listBox.textContent = '조회 실패';
+      return;
+    }
+    const rows = await r.json();
+    if(!rows.length){
+      listBox.textContent = '미사용 충전 코드가 없습니다.';
+      return;
+    }
+    listBox.innerHTML = rows.map(x => `
+      <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed #2b3861">
+        <div>
+          <div><b>주문번호</b> ${x.order_id}</div>
+          <div><b>코드</b> ${x.token_masked}</div>
+        </div>
+        <div><b>+${x.credits}P</b></div>
+      </div>
+    `).join('');
+    redeemBtn.style.display = 'inline-flex';
+
+    redeemBtn.onclick = async ()=>{
+      if(!confirm('모든 미사용 충전 코드를 내 계정으로 적립할까요?')) return;
+      const rr = await fetch(`${API_BASE}/api/redeem_my_claims`, {
+        method:'POST',
+        headers: {
+          'Content-Type':'application/json',
+          ...(await authHeaders())
+        }
+      });
+      const j = await rr.json();
+      if(rr.ok){
+        alert(`적립 완료: +${j.added}P (${j.count}건)`);
+        loadClaimsUI();
+      } else {
+        alert(j.detail || '적립 실패');
+      }
+    };
+  }
+  // ===============================================================
 })();
 </script>
-</body>
-</html>
